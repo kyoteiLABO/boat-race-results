@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>競艇実績一覧</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <header class="site-header">
+        <div class="container flex-between">
+            <h1 class="site-title">競艇実績一覧</h1>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="view-toggle">
+            <a href="index.html" class="toggle-btn active">リスト表示</a>
+            <a href="graph.html" class="toggle-btn">グラフ表示</a>
+        </div>
+        <!-- 既存のコンテンツ -->
+        <div class="card">
+            <h2>直近14日間の実績</h2>
+            <p style="color: #666; font-size: 0.9rem; margin-bottom: 16px;">
+                ※直近14日分のみ表示しています。<br>
+                ※回収率 ＝ 回収金額 ÷ 投資金額 × 100
+            </p>
+
+            <div class="stats-summary" style="margin-bottom: 16px;">
+                <div class="stat-item">
+                    <div class="stat-label">件数（直近14日）</div>
+                    <div class="stat-value" id="sum-count">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">合計投資（直近14日）</div>
+                    <div class="stat-value" id="sum-invest">¥0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">合計回収（直近14日）</div>
+                    <div class="stat-value" id="sum-return">¥0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">回収率（直近14日）</div>
+                    <div class="stat-value" id="sum-rate">0%</div>
+                </div>
+            </div>
+
+            <p id="last-updated" style="margin: 6px 0 16px; color: var(--color-text-muted); font-size: 0.9rem;"></p>
+
+            <div class="result-table-container">
+                <table class="result-table" id="public-results-table">
+                    <thead>
+                        <tr>
+                            <th>日付</th>
+                            <th>区分</th>
+                            <th>会場</th>
+                            <th>レース</th>
+                            <th>的中買い目</th>
+                            <th>投資金額</th>
+                            <th>回収金額</th>
+                            <th>回収率</th>
+                            <th>メモ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-body">
+                        <!-- JS renders rows here -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="no-data-message" class="text-center" style="padding: 20px; display: none;">
+                実績データがありません。
+            </div>
+        </div>
+    </main>
+
+    <footer class="container text-center mt-4" style="padding: 40px 0; border-top: 1px solid var(--color-border);">
+        <a href="admin/login.html" class="admin-link">管理者ログイン</a>
+        <p style="font-size: 0.8rem; color: #999; margin-top: 10px;">&copy; 2026 競艇実績集計</p>
+    </footer>
+
+    <script src="js/app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const manager = new BoatRaceManager();
+            await manager.init();
+
+            const results = manager.getRecentResults(14);
+            const tbody = document.getElementById('results-body');
+            const noDataMsg = document.getElementById('no-data-message');
+
+            // ===== 最終更新日時（全データ基準）=====
+            const all = manager.getAllResults();
+            const last = all
+                .map(r => r.updatedAt || r.createdAt || '')
+                .filter(Boolean)
+                .sort()
+                .slice(-1)[0];
+
+            const fmtDateTime = (s) => {
+                // "yyyy-MM-dd'T'HH:mm:ss" を想定（Apps ScriptのnormalizeDateTime_）
+                const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+                if (!m) return s || '';
+                return `${m[1]}/${Number(m[2])}/${Number(m[3])} ${m[4]}:${m[5]}`;
+            };
+
+            document.getElementById('last-updated').textContent =
+                last ? `最終更新：${fmtDateTime(last)}` : '最終更新：-';
+
+            if (results.length === 0) {
+                noDataMsg.style.display = 'block';
+                return;
+            }
+            noDataMsg.style.display = 'none';
+
+            // ===== サマリー（直近14日） =====
+            const totalInvest = results.reduce((sum, r) => sum + Number(r.invest || 0), 0);
+            const totalReturn = results.reduce((sum, r) => sum + Number(r.returnVal || 0), 0);
+            const totalRate = manager.calculateRecoveryRate(totalInvest, totalReturn);
+
+            document.getElementById('sum-count').textContent = String(results.length);
+            document.getElementById('sum-invest').textContent = `¥${totalInvest.toLocaleString()}`;
+            document.getElementById('sum-return').textContent = `¥${totalReturn.toLocaleString()}`;
+            document.getElementById('sum-rate').textContent = `${totalRate}%`;
+            document.getElementById('sum-rate').style.color =
+                totalRate >= 100 ? 'var(--color-success)' : 'var(--color-danger)';
+
+            const formatCurrency = (num) => {
+                return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(num);
+            };
+
+            const formatDate = (dateStr) => {
+                const d = new Date(dateStr);
+                return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+            };
+
+            const getBuyCodeHtml = (code) => {
+                if (!code) return '';
+                return code.split('-').map(num => `<span class="boat-number boat-${num}">${num}</span>`).join('');
+            };
+
+            results.forEach(item => {
+                const tr = document.createElement('tr');
+
+                // Calculate Rate Color
+                const rate = manager.calculateRecoveryRate(item.invest, item.returnVal);
+                let rateClass = 'col-recovery-rate';
+                if (rate >= 100) rateClass += ' rate-high';
+                if (rate < 100 && rate > 0) rateClass += ' rate-low';
+
+                tr.innerHTML = `
+                    <td>${formatDate(item.date)}</td>
+                    <td><span style="font-size:0.8rem; padding:2px 6px; border-radius:4px; background:${item.type === '有料' ? '#fff3cd' : '#e2e3e5'}">${item.type}</span></td>
+                    <td>${item.place}</td>
+                    <td>${item.raceNumber}R</td>
+                    <td>${getBuyCodeHtml(item.buyCode)}</td>
+                    <td>${formatCurrency(item.invest)}</td>
+                    <td>${formatCurrency(item.returnVal)}</td>
+                    <td class="${rateClass}">${rate}%</td>
+                    <td style="font-size: 0.85rem; color: #555; white-space: normal; max-width: 200px;">${item.memo || '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        });
+    </script>
+</body>
+
+</html>

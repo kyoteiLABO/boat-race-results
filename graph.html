@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>実績グラフ - 競艇実績集計</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .chart-container {
+            margin-bottom: 40px;
+            height: 300px;
+        }
+
+        .stats-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-item {
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid var(--color-border);
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--color-primary);
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: var(--color-text-muted);
+        }
+
+        .filter-section {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+
+<body>
+    <header class="site-header">
+        <div class="container flex-between">
+            <h1 class="site-title">競艇実績グラフ</h1>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="view-toggle">
+            <a href="index.html" class="toggle-btn">リスト表示</a>
+            <a href="graph.html" class="toggle-btn active">グラフ表示</a>
+        </div>
+        <div class="filter-section">
+            <div class="form-inline">
+                <label>区分：</label>
+                <select id="type-filter" class="form-control" style="width: auto; display: inline-block;">
+                    <option value="all">すべて</option>
+                    <option value="無料">無料のみ</option>
+                    <option value="有料">有料のみ</option>
+                </select>
+            </div>
+        </div>
+
+        <p id="period-label" style="margin: 6px 0 16px; color: var(--color-text-muted); font-size: 0.9rem;"></p>
+
+        <div class="stats-summary" id="summary-container">
+            <div class="stat-item">
+                <div class="stat-label">合計投資</div>
+                <div class="stat-value" id="total-invest">¥0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">合計回収</div>
+                <div class="stat-value" id="total-return">¥0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">平均回収率</div>
+                <div class="stat-value" id="avg-rate">0%</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>日別回収率の推移</h3>
+            <div class="chart-container">
+                <canvas id="rateChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>投資金額と回収金額の比較</h3>
+            <div class="chart-container">
+                <canvas id="amountChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card" id="type-comparison-card">
+            <h3>無料 vs 有料 回収率比較</h3>
+            <div class="chart-container" style="height: 250px;">
+                <canvas id="typeChart"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <footer class="container text-center mt-4" style="padding: 40px 0; border-top: 1px solid var(--color-border);">
+        <a href="admin/login.html" class="admin-link">管理者ログイン</a>
+        <p style="font-size: 0.8rem; color: #999; margin-top: 10px;">&copy; 2026 競艇実績集計</p>
+    </footer>
+
+    <script src="js/app.js"></script>
+    <script>
+        const manager = new BoatRaceManager();
+        const isAdmin = sessionStorage.getItem('isLoggedIn') === 'true';
+
+        let rateChart, amountChart, typeChart;
+
+        async function initPage() {
+            await manager.init();
+            updateCharts();
+        }
+
+        function updateCharts() {
+            const typeFilter = document.getElementById('type-filter').value;
+
+            // 期間は常に直近14日
+            let dataSet = manager.getRecentResults(14);
+
+            // 対象期間表示（直近14日）
+            const now = new Date();
+            const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13);
+
+            const fmt = (d) => {
+                const y = d.getFullYear();
+                const m = d.getMonth() + 1;
+                const day = d.getDate();
+                return `${y}/${m}/${day}`;
+            };
+
+            document.getElementById('period-label').textContent =
+                `対象期間：${fmt(from)}〜${fmt(now)}（直近14日）`;
+
+            // Type Filter
+            if (typeFilter !== 'all') {
+                dataSet = dataSet.filter(r => r.type === typeFilter);
+            }
+
+            // Stats Summary
+            const totalInvest = dataSet.reduce((sum, r) => sum + Number(r.invest), 0);
+            const totalReturn = dataSet.reduce((sum, r) => sum + Number(r.returnVal), 0);
+            const avgRate = manager.calculateRecoveryRate(totalInvest, totalReturn);
+
+            document.getElementById('total-invest').textContent = `¥${totalInvest.toLocaleString()}`;
+            document.getElementById('total-return').textContent = `¥${totalReturn.toLocaleString()}`;
+            document.getElementById('avg-rate').textContent = `${avgRate}%`;
+            document.getElementById('avg-rate').style.color = avgRate >= 100 ? 'var(--color-success)' : 'var(--color-danger)';
+
+            const dailyStats = manager.getDailyStats(dataSet);
+            const labels = dailyStats.map(s => s.date.split('-').slice(1).join('/')); // MM/DD
+            const rates = dailyStats.map(s => manager.calculateRecoveryRate(s.invest, s.returnVal));
+            const invests = dailyStats.map(s => s.invest);
+            const returns = dailyStats.map(s => s.returnVal);
+
+            // 1. Rate Chart (Line)
+            if (rateChart) rateChart.destroy();
+            rateChart = new Chart(document.getElementById('rateChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '回収率 (%)',
+                        data: rates,
+                        borderColor: '#0056b3',
+                        backgroundColor: 'rgba(0, 86, 179, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#eee' }
+                        }
+                    },
+                    plugins: {
+                        annotation: { /* 100% line handled via plugin or just manual helper if needed */ }
+                    }
+                }
+            });
+
+            // 2. Amount Chart (Bar)
+            if (amountChart) amountChart.destroy();
+            amountChart = new Chart(document.getElementById('amountChart'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: '投資', data: invests, backgroundColor: '#ccc' },
+                        { label: '回収', data: returns, backgroundColor: '#0056b3' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            // 3. Type Comparative (Bar)
+            const typeStats = manager.getTypeStats(dataSet);
+            if (typeChart) typeChart.destroy();
+            typeChart = new Chart(document.getElementById('typeChart'), {
+                type: 'bar',
+                data: {
+                    labels: ['無料予想', '有料予想'],
+                    datasets: [{
+                        label: '平均回収率 (%)',
+                        data: [typeStats['無料'], typeStats['有料']],
+                        backgroundColor: ['#e2e3e5', '#fff3cd'],
+                        borderColor: ['#999', '#f0ad4e'],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    scales: { x: { beginAtZero: true, max: Math.max(200, typeStats['無料'], typeStats['有料']) } }
+                }
+            });
+        }
+
+        document.getElementById('type-filter').onchange = updateCharts;
+
+        initPage();
+    </script>
+</body>
+
+</html>

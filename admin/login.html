@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者ログイン - 競艇実績管理</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <style>
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container login-container">
+        <div class="card">
+            <h1 class="text-center">管理者ログイン</h1>
+            <form id="login-form">
+                <div class="form-group">
+                    <label class="form-label">書き込みトークン</label>
+                    <input type="password" id="password" class="form-control" required placeholder="Tokenを入力">
+                </div>
+                <div id="login-error" style="color: red; margin-bottom: 15px; display: none;">
+                    トークンが正しくありません。
+                </div>
+                <button type="submit" class="btn" style="width: 100%;">ログイン</button>
+            </form>
+            <div class="text-center mt-4">
+                <a href="../index.html" style="font-size: 0.9rem; color: #666;">公開ページへ戻る</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('login-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const token = document.getElementById('password').value.trim();
+            if (!token) {
+                alert('トークンを入力してください');
+                return;
+            }
+
+            sessionStorage.setItem('isLoggedIn', 'true');
+            sessionStorage.setItem('write_token', token);
+
+            window.location.href = 'dashboard.html';
+        });
+    </script>
+</body>
+
+</html>

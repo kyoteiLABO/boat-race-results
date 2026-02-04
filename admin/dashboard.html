@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理画面 - 競艇実績管理</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <style>
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            width: 90%;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            border-radius: 8px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+    </style>
+</head>
+
+<body>
+    <header class="site-header">
+        <div class="container flex-between">
+            <h1 class="site-title">実績管理ダッシュボード</h1>
+            <div class="header-actions">
+                <a href="../graph.html" class="admin-link">グラフ確認</a>
+                <a href="../index.html" class="admin-link">公開ページ確認</a>
+                <button id="logout-btn" class="btn btn-secondary btn-sm">ログアウト</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="flex-between mb-4" style="margin-bottom: 20px;">
+            <div class="form-inline">
+                <label>表示月：</label>
+                <select id="month-filter" class="form-control" style="width: auto; display: inline-block;">
+                    <!-- JSで動的に生成 -->
+                </select>
+            </div>
+            <button id="add-btn" class="btn">＋ 実績を追加</button>
+        </div>
+
+        <div class="stats-summary" style="margin-bottom: 16px;">
+            <div class="stat-item">
+                <div class="stat-label">件数（選択月）</div>
+                <div class="stat-value" id="m-sum-count">0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">合計投資（選択月）</div>
+                <div class="stat-value" id="m-sum-invest">¥0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">合計回収（選択月）</div>
+                <div class="stat-value" id="m-sum-return">¥0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">回収率（選択月）</div>
+                <div class="stat-value" id="m-sum-rate">0%</div>
+            </div>
+        </div>
+
+        <p id="admin-last-updated" style="margin: 6px 0 16px; color: var(--color-text-muted); font-size: 0.9rem;"></p>
+
+        <div class="card">
+            <div class="result-table-container">
+                <table class="result-table">
+                    <thead>
+                        <tr>
+                            <th>日付</th>
+                            <th>区分</th>
+                            <th>会場</th>
+                            <th>レース</th>
+                            <th>的中買い目</th>
+                            <th>投資金額</th>
+                            <th>回収金額</th>
+                            <th>回収率</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-results-body">
+                        <!-- JS renders rows here -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="no-data-message" class="text-center" style="padding: 20px; display: none;">
+                データがありません。
+            </div>
+        </div>
+    </main>
+
+    <!-- 登録・編集モーダル -->
+    <div id="result-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="modal-title">実績を登録</h2>
+            <form id="result-form">
+                <input type="hidden" id="edit-id">
+                <div class="form-group">
+                    <label class="form-label">日付</label>
+                    <input type="date" id="form-date" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">区分</label>
+                    <select id="form-type" class="form-control">
+                        <option value="無料">無料</option>
+                        <option value="有料">有料</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">レース会場</label>
+                    <input type="text" id="form-place" class="form-control" required placeholder="例：桐生">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">レースナンバー</label>
+                    <input type="number" id="form-raceNumber" class="form-control" required min="1" max="12">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">的中買い目</label>
+                    <div class="boat-selector" id="buy-selector">
+                        <div class="boat-btn boat-1" onclick="selectBoat(1)">1</div>
+                        <div class="boat-btn boat-2" onclick="selectBoat(2)">2</div>
+                        <div class="boat-btn boat-3" onclick="selectBoat(3)">3</div>
+                        <div class="boat-btn boat-4" onclick="selectBoat(4)">4</div>
+                        <div class="boat-btn boat-5" onclick="selectBoat(5)">5</div>
+                        <div class="boat-btn boat-6" onclick="selectBoat(6)">6</div>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="clearBuyCode()"
+                            style="margin-left: 10px;">クリア</button>
+                    </div>
+                    <input type="text" id="form-buyCode" class="form-control" readonly required placeholder="1-2-3 など">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">投資金額 (円)</label>
+                    <input type="number" id="form-invest" class="form-control" required min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">回収金額 (円)</label>
+                    <input type="number" id="form-returnVal" class="form-control" required min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">回収率</label>
+                    <input type="text" id="form-rate" class="form-control" readonly value="0%">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">メモ（公開ページに表示されます）</label>
+                    <textarea id="form-memo" class="form-control" rows="2" placeholder="備考など"></textarea>
+                </div>
+
+                <div class="flex-between mt-4">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+                    <button type="submit" class="btn">保存する</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="../js/app.js"></script>
+    <script>
+        let manager;
+        let tbody, modal, form, monthFilter;
+        let selectedBoats = [];
+        let editingId = ''; // 編集中のIDを管理
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 認証チェック & トークン取得
+            const token = sessionStorage.getItem('write_token');
+            if (sessionStorage.getItem('isLoggedIn') !== 'true' || !token) {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            // 1. manager生成
+            manager = new BoatRaceManager();
+            // 2. トークンセット
+            manager.setWriteToken(token);
+            // 3. データ取得（この順番が重要）
+            await manager.init();
+
+            // DOM要素の取得
+            tbody = document.getElementById('admin-results-body');
+            modal = document.getElementById('result-modal');
+            form = document.getElementById('result-form');
+            monthFilter = document.getElementById('month-filter');
+
+            // 4. 初期化と描画
+            initMonthFilter();
+            render();
+
+            // イベントリスナーの設定
+            document.getElementById('add-btn').onclick = openAddModal;
+            document.getElementById('form-invest').addEventListener('input', updateRateInForm);
+            document.getElementById('form-returnVal').addEventListener('input', updateRateInForm);
+            monthFilter.onchange = render;
+            document.getElementById('logout-btn').onclick = logout;
+            form.onsubmit = handleFormSubmit;
+        });
+
+        // 以下、各関数
+
+        // 舟番号選択ロジック
+        window.selectBoat = (num) => {
+            if (selectedBoats.length >= 3) return;
+            selectedBoats.push(num);
+            document.getElementById('form-buyCode').value = selectedBoats.join('-');
+        };
+
+        window.clearBuyCode = () => {
+            selectedBoats = [];
+            document.getElementById('form-buyCode').value = '';
+        };
+
+        function getBuyCodeHtml(code) {
+            if (!code) return '';
+            return code.split('-').map(num => `<span class="boat-number boat-${num}">${num}</span>`).join('');
+        }
+
+        // 表示月のフィルタ選択肢を生成
+        function initMonthFilter() {
+            monthFilter.innerHTML = ''; // 追記：初期化時に中身をクリア
+            const now = new Date();
+            for (let i = 0; i < 12; i++) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const opt = document.createElement('option');
+                const val = `${d.getFullYear()}-${d.getMonth() + 1}`;
+                opt.value = val;
+                opt.textContent = `${d.getFullYear()}年 ${d.getMonth() + 1}月`;
+                monthFilter.appendChild(opt);
+            }
+            monthFilter.value = `${now.getFullYear()}-${now.getMonth() + 1}`;
+        }
+
+        function render() {
+            if (!manager) return;
+            const [year, month] = monthFilter.value.split('-').map(Number);
+            const results = manager.getResultsByMonth(year, month);
+            tbody.innerHTML = '';
+
+            // ===== 最終更新日時（全データ基準）=====
+            const all = manager.getAllResults();
+            const last = all
+                .map(r => r.updatedAt || r.createdAt || '')
+                .filter(Boolean)
+                .sort()
+                .slice(-1)[0];
+
+            const fmtDateTime = (s) => {
+                const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+                if (!m) return s || '';
+                return `${m[1]}/${Number(m[2])}/${Number(m[3])} ${m[4]}:${m[5]}`;
+            };
+
+            document.getElementById('admin-last-updated').textContent =
+                last ? `最終更新：${fmtDateTime(last)}` : '最終更新：-';
+
+            // ===== 月サマリー（選択月）=====
+            const totalInvest = results.reduce((sum, r) => sum + Number(r.invest || 0), 0);
+            const totalReturn = results.reduce((sum, r) => sum + Number(r.returnVal || 0), 0);
+            const totalRate = manager.calculateRecoveryRate(totalInvest, totalReturn);
+
+            document.getElementById('m-sum-count').textContent = String(results.length);
+            document.getElementById('m-sum-invest').textContent = `¥${totalInvest.toLocaleString()}`;
+            document.getElementById('m-sum-return').textContent = `¥${totalReturn.toLocaleString()}`;
+            document.getElementById('m-sum-rate').textContent = `${totalRate}%`;
+            document.getElementById('m-sum-rate').style.color =
+                totalRate >= 100 ? 'var(--color-success)' : 'var(--color-danger)';
+
+            if (results.length === 0) {
+                document.getElementById('no-data-message').style.display = 'block';
+                return;
+            }
+            document.getElementById('no-data-message').style.display = 'none';
+
+            results.forEach(item => {
+                const tr = document.createElement('tr');
+                const rate = manager.calculateRecoveryRate(item.invest, item.returnVal);
+
+                tr.innerHTML = `
+                    <td>${item.date}</td>
+                    <td>${item.type}</td>
+                    <td>${item.place}</td>
+                    <td>${item.raceNumber}R</td>
+                    <td>${getBuyCodeHtml(item.buyCode)}</td>
+                    <td>¥${Number(item.invest).toLocaleString()}</td>
+                    <td>¥${Number(item.returnVal).toLocaleString()}</td>
+                    <td style="font-weight:bold; color:${rate >= 100 ? 'var(--color-success)' : 'inherit'}">${rate}%</td>
+                    <td>
+                        <button class="btn btn-sm" onclick="editItem('${item.id}')">編集</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteItem('${item.id}')">削除</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        const updateRateInForm = () => {
+            const invest = Number(document.getElementById('form-invest').value) || 0;
+            const ret = Number(document.getElementById('form-returnVal').value) || 0;
+            const rate = manager.calculateRecoveryRate(invest, ret);
+            document.getElementById('form-rate').value = `${rate}%`;
+        };
+
+        function closeModal() {
+            modal.style.display = 'none';
+        }
+        window.closeModal = closeModal; // ボタン onclick 用に残す（任意だが安全）
+
+        function openAddModal() {
+            document.getElementById('modal-title').textContent = '実績を登録';
+            form.reset();
+            clearBuyCode();
+            editingId = ''; // 追記: IDをクリア
+            document.getElementById('edit-id').value = '';
+            document.getElementById('form-date').value = new Date().toISOString().split('T')[0];
+            modal.style.display = 'block';
+        }
+
+        window.editItem = (id) => {
+            const item = manager.getAllResults().find(r => r.id === id);
+            if (!item) return;
+
+            document.getElementById('modal-title').textContent = '実績を編集';
+            editingId = item.id; // 追記: IDをセット
+            document.getElementById('edit-id').value = item.id;
+            document.getElementById('form-date').value = item.date;
+            document.getElementById('form-type').value = item.type;
+            document.getElementById('form-place').value = item.place;
+            document.getElementById('form-raceNumber').value = item.raceNumber;
+
+            selectedBoats = item.buyCode ? item.buyCode.split('-') : [];
+            document.getElementById('form-buyCode').value = item.buyCode || '';
+
+            document.getElementById('form-invest').value = item.invest;
+            document.getElementById('form-returnVal').value = item.returnVal;
+            document.getElementById('form-memo').value = item.memo || '';
+            updateRateInForm();
+            modal.style.display = 'block';
+        };
+
+        window.deleteItem = async (id) => {
+            if (confirm('本当に削除しますか？')) {
+                await manager.deleteResultRemote(id);
+                initMonthFilter();
+                render();
+            }
+        };
+
+        let isSaving = false;
+
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            if (isSaving) return;
+
+            const submitBtn = form.querySelector('button[type="submit"]');
+            isSaving = true;
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = '保存中...';
+            }
+
+            try {
+                const date = document.getElementById('form-date').value;
+                const type = document.getElementById('form-type').value;
+                const place = document.getElementById('form-place').value.trim();
+                const raceNumber = Number(document.getElementById('form-raceNumber').value);
+                const rawBuy = document.getElementById('form-buyCode').value;
+                const buyCode = normalizeBuyCode_(rawBuy);
+
+                if (!buyCode) {
+                    alert('的中買い目（例：1-2-3）を入力してください');
+                    return;
+                }
+
+                const invest = Number(document.getElementById('form-invest').value);
+                const returnVal = Number(document.getElementById('form-returnVal').value);
+                const memo = document.getElementById('form-memo').value.trim();
+
+                const payload = { date, type, place, raceNumber, buyCode, invest, returnVal, memo };
+
+                if (editingId) {
+                    await manager.updateResultRemote(editingId, payload);
+                } else {
+                    await manager.createResult(payload);
+                }
+
+                initMonthFilter();
+                render();
+
+                closeModal(); // ← 必ず閉じる
+            } catch (err) {
+                console.error(err);
+                alert('保存に失敗しました（トークン・ネットワーク・設定を確認）');
+            } finally {
+                isSaving = false;
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '保存する';
+                }
+            }
+        }
+
+        function logout() {
+            sessionStorage.removeItem('isLoggedIn');
+            sessionStorage.removeItem('write_token');
+            window.location.href = 'login.html';
+        }
+
+        function normalizeBuyCode_(v) {
+            const s = String(v ?? '').trim();
+
+            // すでに "1-2-3" 形式ならOK（スペース除去のみ）
+            const cleaned = s.replace(/\s+/g, '');
+            if (/^\d{1,2}-\d{1,2}-\d{1,2}$/.test(cleaned)) return cleaned;
+
+            // "1,2,3" や "1 2 3" のような区切りも許容して "1-2-3" に統一
+            const nums = cleaned.split(/[^0-9]+/).filter(Boolean);
+            if (nums.length === 3) return `${Number(nums[0])}-${Number(nums[1])}-${Number(nums[2])}`;
+
+            // もし Date 文字列になってしまっても、買い目としては不正なので空にする
+            return '';
+        }
+    </script>
+</body>
+
+</html>

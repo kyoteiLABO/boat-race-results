@@ -1,0 +1,327 @@
+:root {
+  /* Colors */
+  --color-bg-body: #f5f7fa;
+  --color-bg-card: #ffffff;
+  --color-text-main: #333333;
+  --color-text-muted: #666666;
+  --color-border: #e0e0e0;
+
+  --color-primary: #0056b3;
+  /* Blue for primary actions */
+  --color-danger: #d9534f;
+  --color-success: #5cb85c;
+
+  /* Boat Colors */
+  --boat-1: #ffffff;
+  /* White */
+  --boat-2: #000000;
+  /* Black */
+  --boat-3: #c90000;
+  /* Red */
+  --boat-4: #005ba8;
+  /* Blue */
+  --boat-5: #e8d302;
+  /* Yellow */
+  --boat-6: #009c3e;
+  /* Green */
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 40px;
+
+  /* Typography */
+  --font-family: 'Helvetica Neue', Arial, sans-serif;
+  --font-size-base: 16px;
+  --font-weight-bold: 700;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  background-color: var(--color-bg-body);
+  color: var(--color-text-main);
+  line-height: 1.5;
+  font-size: var(--font-size-base);
+}
+
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: var(--spacing-md);
+}
+
+/* Header */
+.site-header {
+  background: var(--color-bg-card);
+  padding: var(--spacing-md);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--spacing-lg);
+}
+
+.site-title {
+  font-size: 1.5rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+  text-decoration: none;
+  color: var(--color-text-main);
+}
+
+.admin-link {
+  font-size: 0.9rem;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+/* Cards */
+.card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Tables */
+.result-table-container {
+  overflow-x: auto;
+}
+
+.result-table {
+  width: 1000px;
+  min-width: 100%;
+  /* Ensure it takes full width but allows scroll on small screens */
+  border-collapse: collapse;
+}
+
+.result-table th,
+.result-table td {
+  padding: var(--spacing-sm) var(--spacing-md);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.result-table th {
+  background-color: #f9f9f9;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-muted);
+}
+
+/* Boat Numbers Styling */
+.boat-number {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  text-align: center;
+  border-radius: 50%;
+  color: white;
+  font-weight: bold;
+  font-size: 12px;
+  margin-right: 2px;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+}
+
+.boat-1 {
+  background-color: var(--boat-1);
+  color: #333;
+  border: 1px solid #ccc;
+}
+
+.boat-2 {
+  background-color: var(--boat-2);
+}
+
+.boat-3 {
+  background-color: var(--boat-3);
+}
+
+.boat-4 {
+  background-color: var(--boat-4);
+}
+
+.boat-5 {
+  background-color: var(--boat-5);
+  color: #333;
+}
+
+.boat-6 {
+  background-color: var(--boat-6);
+}
+
+/* Win/Loss Colors (Optional Highlighting) */
+.col-recovery-rate {
+  font-weight: bold;
+}
+
+.rate-high {
+  color: var(--color-success);
+}
+
+.rate-low {
+  color: var(--color-danger);
+}
+
+/* Forms */
+.form-group {
+  margin-bottom: var(--spacing-md);
+}
+
+.form-label {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+  font-weight: var(--font-weight-bold);
+}
+
+.form-control {
+  width: 100%;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.btn {
+  display: inline-block;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 1rem;
+}
+
+.btn:hover {
+  opacity: 0.9;
+}
+
+.btn-secondary {
+  background-color: #6c757d;
+}
+
+.btn-danger {
+  background-color: var(--color-danger);
+}
+
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 0.8rem;
+}
+
+/* Utilities */
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.mt-4 {
+  margin-top: var(--spacing-xl);
+}
+
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Page Toggle Tabs */
+.view-toggle {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--spacing-lg);
+  gap: 10px;
+}
+
+.toggle-btn {
+  padding: 10px 24px;
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: 30px;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+
+.toggle-btn.active {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+  box-shadow: 0 4px 10px rgba(0, 86, 179, 0.2);
+}
+
+.toggle-btn:hover:not(.active) {
+  background: #f0f0f0;
+  border-color: #ccc;
+}
+
+/* Boat Select Buttons */
+.boat-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.boat-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.boat-btn:hover {
+  opacity: 0.8;
+}
+
+.boat-btn.active {
+  outline: 2px solid var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(0, 86, 179, 0.3);
+}
+
+/* Stats Summary */
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-item {
+  background: white;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--color-primary);
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
