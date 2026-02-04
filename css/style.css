@@ -299,12 +299,19 @@ body {
   box-shadow: 0 0 0 3px rgba(0, 86, 179, 0.3);
 }
 
-/* Stats Summary */
+/* Stats Summary: PC・タブレット：4つ横並び */
 .stats-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 24px;
+}
+
+/* スマホ：2×2 */
+@media (max-width: 768px) {
+  .stats-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .stat-item {
