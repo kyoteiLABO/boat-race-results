@@ -75,16 +75,16 @@
 
         <div class="stats-summary" id="summary-container">
             <div class="stat-item">
-                <div class="stat-label">合計投資</div>
-                <div class="stat-value" id="total-invest">¥0</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">合計回収</div>
-                <div class="stat-value" id="total-return">¥0</div>
-            </div>
-            <div class="stat-item">
                 <div class="stat-label">平均回収率</div>
                 <div class="stat-value" id="avg-rate">0%</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">的中率</div>
+                <div class="stat-value" id="hit-rate">0%</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">有料予想 利用者数（合計）</div>
+                <div class="stat-value" id="paid-users-total">0</div>
             </div>
         </div>
 
@@ -96,9 +96,9 @@
         </div>
 
         <div class="card">
-            <h3>投資金額と回収金額の比較</h3>
-            <div class="chart-container">
-                <canvas id="amountChart"></canvas>
+            <h3>有料予想 利用者数の推移</h3>
+            <div class="chart-container" style="height: 250px;">
+                <canvas id="usersChart"></canvas>
             </div>
         </div>
 
@@ -120,47 +120,89 @@
         const manager = new BoatRaceManager();
         const isAdmin = sessionStorage.getItem('isLoggedIn') === 'true';
 
-        let rateChart, amountChart, typeChart;
+        let rateChart, usersChart, typeChart;
+        let usersItems = [];
 
         async function initPage() {
             await manager.init();
+
+            try {
+                const u = await jsonpGet(`${API_BASE_URL}?kind=users`);
+                usersItems = (u && u.ok && Array.isArray(u.items)) ? u.items : [];
+            } catch (e) {
+                console.error("users 読み込み失敗", e);
+                usersItems = [];
+            }
+
             updateCharts();
         }
 
         function updateCharts() {
             const typeFilter = document.getElementById('type-filter').value;
 
-            // 期間は常に直近14日
-            let dataSet = manager.getRecentResults(14);
-
-            // 対象期間表示（直近14日）
+            // ===== records：直近14日（当日含む）=====
             const now = new Date();
-            const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13);
+            const endRecords = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const startRecords = new Date(endRecords.getFullYear(), endRecords.getMonth(), endRecords.getDate() - 13);
 
-            const fmt = (d) => {
-                const y = d.getFullYear();
-                const m = d.getMonth() + 1;
-                const day = d.getDate();
-                return `${y}/${m}/${day}`;
+            const inRangeRecords = (ymd) => {
+                const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (!m) return false;
+                const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+                return d >= startRecords && d <= endRecords;
             };
 
+            let dataSet = manager.getAllResults().filter(r => inRangeRecords(r.date));
+
+            // 表示ラベル（records基準）
+            const fmt = (d) => `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
             document.getElementById('period-label').textContent =
-                `対象期間：${fmt(from)}〜${fmt(now)}（直近14日）`;
+                `対象期間：${fmt(startRecords)}〜${fmt(endRecords)}（直近14日）`;
+
+            // ===== users：前日までの直近14日 =====
+            const endUsers = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+            const startUsers = new Date(endUsers.getFullYear(), endUsers.getMonth(), endUsers.getDate() - 13);
+
+            const inRangeUsers = (ymd) => {
+                const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (!m) return false;
+                const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+                return d >= startUsers && d <= endUsers;
+            };
+
+            // users側の日付ラベル生成（前日まで14日固定）
+            const usersDates = [];
+            for (let i = 13; i >= 0; i--) {
+                const d = new Date(endUsers.getFullYear(), endUsers.getMonth(), endUsers.getDate() - i);
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                usersDates.push(`${y}-${m}-${day}`);
+            }
 
             // Type Filter
             if (typeFilter !== 'all') {
                 dataSet = dataSet.filter(r => r.type === typeFilter);
             }
 
-            // Stats Summary
-            const totalInvest = dataSet.reduce((sum, r) => sum + Number(r.invest), 0);
-            const totalReturn = dataSet.reduce((sum, r) => sum + Number(r.returnVal), 0);
+            // Stats Summary（平均回収率・的中率・利用者数）
+            const totalInvest = dataSet.reduce((sum, r) => sum + Number(r.invest || 0), 0);
+            const totalReturn = dataSet.reduce((sum, r) => sum + Number(r.returnVal || 0), 0);
             const avgRate = manager.calculateRecoveryRate(totalInvest, totalReturn);
 
-            document.getElementById('total-invest').textContent = `¥${totalInvest.toLocaleString()}`;
-            document.getElementById('total-return').textContent = `¥${totalReturn.toLocaleString()}`;
+            // 的中率（returnVal > 0 の割合）
+            const hitRate = manager.calculateHitRate(dataSet);
+
+            // 利用者数（前日までの直近14日）合計
+            const paidUsersTotal = (usersItems || [])
+                .filter(u => u && u.date && inRangeUsers(u.date))
+                .reduce((sum, u) => sum + Number(u.count || 0), 0);
+
             document.getElementById('avg-rate').textContent = `${avgRate}%`;
             document.getElementById('avg-rate').style.color = avgRate >= 100 ? 'var(--color-success)' : 'var(--color-danger)';
+
+            document.getElementById('hit-rate').textContent = `${hitRate}%`;
+            document.getElementById('paid-users-total').textContent = String(paidUsersTotal);
 
             const dailyStats = manager.getDailyStats(dataSet);
             const labels = dailyStats.map(s => s.date.split('-').slice(1).join('/')); // MM/DD
@@ -198,23 +240,31 @@
                 }
             });
 
-            // 2. Amount Chart (Bar)
-            if (amountChart) amountChart.destroy();
-            amountChart = new Chart(document.getElementById('amountChart'), {
+            // 2. Users Chart (Bar) ※前日まで14日固定
+            const usersMap = {};
+            (usersItems || []).forEach(u => {
+                if (!u.date) return;
+                if (!inRangeUsers(u.date)) return;
+                usersMap[u.date] = Number(u.count || 0);
+            });
+
+            const userCounts = usersDates.map(d => usersMap[d] ?? 0);
+            const usersLabels = usersDates.map(d => d.split('-').slice(1).join('/'));
+
+            if (usersChart) usersChart.destroy();
+            usersChart = new Chart(document.getElementById('usersChart'), {
                 type: 'bar',
                 data: {
-                    labels: labels,
-                    datasets: [
-                        { label: '投資', data: invests, backgroundColor: '#ccc' },
-                        { label: '回収', data: returns, backgroundColor: '#0056b3' }
-                    ]
+                    labels: usersLabels,
+                    datasets: [{ label: '利用者数（人）', data: userCounts }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    scales: { y: { beginAtZero: true } }
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
                 }
             });
+
 
             // 3. Type Comparative (Bar)
             const typeStats = manager.getTypeStats(dataSet);
