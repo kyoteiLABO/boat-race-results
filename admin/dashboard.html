@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>競艇LABO 予想実績</title>
     <link rel="stylesheet" href="../css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         .modal {
             display: none;
@@ -80,6 +81,59 @@
         </div>
 
         <p id="admin-last-updated" style="margin: 6px 0 16px; color: var(--color-text-muted); font-size: 0.9rem;"></p>
+
+        <!-- 管理画面グラフセクション -->
+        <div class="card" style="margin-bottom: 24px;">
+            <div class="flex-between mb-2">
+                <h3>統計グラフ</h3>
+                <div class="btn-group" id="graph-range-toggles">
+                    <button class="btn btn-sm btn-outline active" data-range="month">選択月</button>
+                    <button class="btn btn-sm btn-outline" data-range="all">全期間</button>
+                </div>
+            </div>
+            <div class="chart-container" style="position: relative; height:300px; width:100%;">
+                <canvas id="adminChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 24px;">
+            <div class="flex-between" style="gap: 12px; align-items: center;">
+                <h3 style="margin: 0;">有料予想 利用者数（前日分）</h3>
+                <span style="font-size: 0.9rem; color: var(--color-text-muted);">
+                    ※同じ日付は上書き（編集）されます
+                </span>
+            </div>
+
+            <div class="form-inline" style="gap: 10px; margin-top: 12px; flex-wrap: wrap;">
+                <label style="display:flex; align-items:center; gap:6px;">
+                    日付
+                    <input type="date" id="users-date" class="form-control" style="width: 160px;">
+                </label>
+
+                <label style="display:flex; align-items:center; gap:6px;">
+                    利用者数
+                    <input type="number" id="users-count" class="form-control" min="0" step="1" style="width: 120px;">
+                </label>
+
+                <button id="users-save-btn" class="btn">保存</button>
+                <button id="users-clear-btn" class="btn btn-outline">クリア</button>
+
+                <span id="users-msg" style="font-size: 0.9rem; color: var(--color-text-muted);"></span>
+            </div>
+
+            <div style="margin-top: 12px; overflow-x: auto;">
+                <table class="result-table">
+                    <thead>
+                        <tr>
+                            <th>日付</th>
+                            <th>利用者数</th>
+                            <th style="width: 140px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-body"></tbody>
+                </table>
+            </div>
+        </div>
 
         <div class="card">
             <div class="result-table-container">
@@ -160,6 +214,10 @@
                     <input type="text" id="form-rate" class="form-control" readonly value="0%">
                 </div>
                 <div class="form-group">
+                    <label class="form-label">利用者数 (有料予想のみ)</label>
+                    <input type="number" id="form-userCount" class="form-control" min="0" value="0">
+                </div>
+                <div class="form-group">
                     <label class="form-label">メモ（公開ページに表示されます）</label>
                     <textarea id="form-memo" class="form-control" rows="2" placeholder="備考など"></textarea>
                 </div>
@@ -177,7 +235,11 @@
         let manager;
         let tbody, modal, form, monthFilter;
         let selectedBoats = [];
-        let editingId = ''; // 編集中のIDを管理
+        let editingId = ''; // 実績編集用のID
+        let editingUserId = ''; // 利用者数編集用のID
+        let adminChart;
+        let graphRange = 'month'; // 'month' or 'all'
+        let usersItems = []; // 有料予想利用者数データ
 
         document.addEventListener('DOMContentLoaded', async () => {
             // 認証チェック & トークン取得
@@ -189,9 +251,8 @@
 
             // 1. manager生成
             manager = new BoatRaceManager();
-            // 2. トークンセット
             manager.setWriteToken(token);
-            // 3. データ取得（この順番が重要）
+            // 3. データ取得
             await manager.init();
 
             // DOM要素の取得
@@ -204,6 +265,10 @@
             initMonthFilter();
             render();
 
+            // 利用者数データの初期化
+            setDefaultUsersDateToYesterday();
+            await loadUsers();
+
             // イベントリスナーの設定
             document.getElementById('add-btn').onclick = openAddModal;
             document.getElementById('form-invest').addEventListener('input', updateRateInForm);
@@ -211,11 +276,152 @@
             monthFilter.onchange = render;
             document.getElementById('logout-btn').onclick = logout;
             form.onsubmit = handleFormSubmit;
+
+            // グラフ範囲切り替え
+            document.querySelectorAll('#graph-range-toggles .btn').forEach(btn => {
+                btn.onclick = (e) => {
+                    document.querySelectorAll('#graph-range-toggles .btn').forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                    graphRange = e.target.dataset.range;
+                    render();
+                };
+            });
+
+            // 利用者数：日付変更による自動検知
+            document.getElementById("users-date").addEventListener("change", () => {
+                const dateStr = document.getElementById("users-date").value;
+                const hit = findUserByDate(dateStr);
+                if (hit) {
+                    document.getElementById("users-count").value = Number(hit.count || 0);
+                    editingUserId = String(hit.id || "");
+                    setUsersMsg("この日付は登録済みです（保存で上書きします）");
+                } else {
+                    editingUserId = "";
+                    setUsersMsg("");
+                }
+            });
+
+            // 利用者数：保存
+            document.getElementById("users-save-btn").addEventListener("click", async () => {
+                const dateStr = document.getElementById("users-date").value;
+                const countVal = Number(document.getElementById("users-count").value || 0);
+
+                if (!dateStr) {
+                    alert("日付を選択してください");
+                    return;
+                }
+                if (countVal < 0 || !Number.isFinite(countVal)) {
+                    alert("利用者数は0以上の整数にしてください");
+                    return;
+                }
+
+                const existing = findUserByDate(dateStr);
+                const targetId = editingUserId || (existing ? String(existing.id) : "");
+
+                try {
+                    setUsersMsg("保存中...");
+                    if (targetId) {
+                        await manager.postAction("update", { id: targetId, date: dateStr, count: Math.trunc(countVal) }, "users");
+                        setUsersMsg("更新しました");
+                    } else {
+                        await manager.postAction("create", { date: dateStr, count: Math.trunc(countVal) }, "users");
+                        setUsersMsg("保存しました");
+                    }
+                    editingUserId = "";
+                    await loadUsers();
+                    setTimeout(() => setUsersMsg(""), 3000);
+                } catch (e) {
+                    console.error(e);
+                    setUsersMsg("保存に失敗しました");
+                }
+            });
+
+            // 利用者数：クリア
+            document.getElementById("users-clear-btn").addEventListener("click", () => {
+                editingUserId = "";
+                document.getElementById("users-count").value = 0;
+                setDefaultUsersDateToYesterday();
+                setUsersMsg("");
+            });
         });
 
-        // 以下、各関数
+        // --- 利用者数関連の関数 ---
+        function formatYmd(d) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            return `${y}-${m}-${day}`;
+        }
 
-        // 舟番号選択ロジック
+        function setUsersMsg(text) {
+            const el = document.getElementById("users-msg");
+            if (el) el.textContent = text || "";
+        }
+
+        async function loadUsers() {
+            try {
+                const json = await jsonpGet(`${API_BASE_URL}?kind=users`);
+                usersItems = (json && json.ok && Array.isArray(json.items)) ? json.items : [];
+            } catch (e) {
+                console.error(e);
+                usersItems = [];
+            }
+            renderUsersTable();
+        }
+
+        function findUserByDate(dateStr) {
+            return usersItems.find(x => String(x.date || "") === String(dateStr));
+        }
+
+        function renderUsersTable() {
+            const utbody = document.getElementById("users-body");
+            if (!utbody) return;
+
+            const sorted = [...usersItems].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+
+            utbody.innerHTML = sorted.map(x => `
+                <tr>
+                    <td>${x.date || ""}</td>
+                    <td>${Number(x.count || 0)}</td>
+                    <td>
+                        <button class="btn btn-sm" onclick="editUser('${x.id}')">編集</button>
+                        <button class="btn btn-sm btn-outline" onclick="deleteUser('${x.id}')">削除</button>
+                    </td>
+                </tr>
+            `).join("");
+        }
+
+        window.editUser = (id) => {
+            const item = usersItems.find(u => String(u.id) === String(id));
+            if (!item) return;
+            document.getElementById("users-date").value = item.date || "";
+            document.getElementById("users-count").value = Number(item.count || 0);
+            editingUserId = String(item.id || "");
+            setUsersMsg("編集モードです（保存で上書きします）");
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        window.deleteUser = async (id) => {
+            if (!confirm("この行を削除しますか？")) return;
+            try {
+                await manager.postAction("delete", { id }, "users");
+                setUsersMsg("削除しました");
+                editingUserId = "";
+                await loadUsers();
+            } catch (e) {
+                console.error(e);
+                setUsersMsg("削除に失敗しました");
+            }
+        };
+
+        function setDefaultUsersDateToYesterday() {
+            const d = new Date();
+            d.setDate(d.getDate() - 1);
+            const el = document.getElementById("users-date");
+            if (el) el.value = formatYmd(d);
+        }
+
+        // --- 実績管理（Records）関連の関数 ---
         window.selectBoat = (num) => {
             if (selectedBoats.length >= 3) return;
             selectedBoats.push(num);
@@ -232,9 +438,9 @@
             return code.split('-').map(num => `<span class="boat-number boat-${num}">${num}</span>`).join('');
         }
 
-        // 表示月のフィルタ選択肢を生成
         function initMonthFilter() {
-            monthFilter.innerHTML = ''; // 追記：初期化時に中身をクリア
+            if (!monthFilter) return;
+            monthFilter.innerHTML = '';
             const now = new Date();
             for (let i = 0; i < 12; i++) {
                 const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -248,12 +454,11 @@
         }
 
         function render() {
-            if (!manager) return;
+            if (!manager || !tbody) return;
             const [year, month] = monthFilter.value.split('-').map(Number);
             const results = manager.getResultsByMonth(year, month);
             tbody.innerHTML = '';
 
-            // ===== 最終更新日時（全データ基準）=====
             const all = manager.getAllResults();
             const last = all
                 .map(r => r.updatedAt || r.createdAt || '')
@@ -267,46 +472,87 @@
                 return `${m[1]}/${Number(m[2])}/${Number(m[3])} ${m[4]}:${m[5]}`;
             };
 
-            document.getElementById('admin-last-updated').textContent =
-                last ? `最終更新：${fmtDateTime(last)}` : '最終更新：-';
+            const lastUpdatedEl = document.getElementById('admin-last-updated');
+            if (lastUpdatedEl) {
+                lastUpdatedEl.textContent = last ? `最終更新：${fmtDateTime(last)}` : '最終更新：-';
+            }
 
-            // ===== 月サマリー（選択月）=====
             const totalInvest = results.reduce((sum, r) => sum + Number(r.invest || 0), 0);
             const totalReturn = results.reduce((sum, r) => sum + Number(r.returnVal || 0), 0);
             const totalRate = manager.calculateRecoveryRate(totalInvest, totalReturn);
 
-            document.getElementById('m-sum-count').textContent = String(results.length);
-            document.getElementById('m-sum-invest').textContent = `¥${totalInvest.toLocaleString()}`;
-            document.getElementById('m-sum-return').textContent = `¥${totalReturn.toLocaleString()}`;
-            document.getElementById('m-sum-rate').textContent = `${totalRate}%`;
-            document.getElementById('m-sum-rate').style.color =
-                totalRate >= 100 ? 'var(--color-success)' : 'var(--color-danger)';
-
-            if (results.length === 0) {
-                document.getElementById('no-data-message').style.display = 'block';
-                return;
+            const sets = {
+                'm-sum-count': results.length,
+                'm-sum-invest': `¥${totalInvest.toLocaleString()}`,
+                'm-sum-return': `¥${totalReturn.toLocaleString()}`,
+                'm-sum-rate': `${totalRate}%`
+            };
+            for (const [id, val] of Object.entries(sets)) {
+                const el = document.getElementById(id);
+                if (el) el.textContent = val;
             }
-            document.getElementById('no-data-message').style.display = 'none';
+            const rateEl = document.getElementById('m-sum-rate');
+            if (rateEl) rateEl.style.color = totalRate >= 100 ? 'var(--color-success)' : 'var(--color-danger)';
 
-            results.forEach(item => {
-                const tr = document.createElement('tr');
-                const rate = manager.calculateRecoveryRate(item.invest, item.returnVal);
+            const noDataEl = document.getElementById('no-data-message');
+            if (results.length === 0) {
+                if (noDataEl) noDataEl.style.display = 'block';
+            } else {
+                if (noDataEl) noDataEl.style.display = 'none';
+                results.forEach(item => {
+                    const tr = document.createElement('tr');
+                    const rate = manager.calculateRecoveryRate(item.invest, item.returnVal);
+                    tr.innerHTML = `
+                        <td>${item.date}</td>
+                        <td>${item.type}</td>
+                        <td>${item.place}</td>
+                        <td>${item.raceNumber}R</td>
+                        <td>${getBuyCodeHtml(item.buyCode)}</td>
+                        <td>¥${Number(item.invest).toLocaleString()}</td>
+                        <td>¥${Number(item.returnVal).toLocaleString()}</td>
+                        <td style="font-weight:bold; color:${rate >= 100 ? 'var(--color-success)' : 'inherit'}">${rate}%</td>
+                        <td>
+                            <button class="btn btn-sm" onclick="editItem('${item.id}')">編集</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteItem('${item.id}')">削除</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
 
-                tr.innerHTML = `
-                    <td>${item.date}</td>
-                    <td>${item.type}</td>
-                    <td>${item.place}</td>
-                    <td>${item.raceNumber}R</td>
-                    <td>${getBuyCodeHtml(item.buyCode)}</td>
-                    <td>¥${Number(item.invest).toLocaleString()}</td>
-                    <td>¥${Number(item.returnVal).toLocaleString()}</td>
-                    <td style="font-weight:bold; color:${rate >= 100 ? 'var(--color-success)' : 'inherit'}">${rate}%</td>
-                    <td>
-                        <button class="btn btn-sm" onclick="editItem('${item.id}')">編集</button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteItem('${item.id}')">削除</button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
+            const chartData = graphRange === 'month' ? results : all;
+            renderChart(chartData);
+        }
+
+        function renderChart(dataSet) {
+            const canvas = document.getElementById('adminChart');
+            if (!canvas) return;
+
+            const dailyStats = manager.getDailyStats(dataSet);
+            const labels = dailyStats.map(s => s.date.split('-').slice(1).join('/'));
+            const rates = dailyStats.map(s => manager.calculateRecoveryRate(s.invest, s.returnVal));
+            const invests = dailyStats.map(s => s.invest);
+            const returns = dailyStats.map(s => s.returnVal);
+
+            if (adminChart) adminChart.destroy();
+            adminChart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: '投資額', data: invests, backgroundColor: '#ccc', type: 'bar', order: 3 },
+                        { label: '回収額', data: returns, backgroundColor: '#0056b3', type: 'bar', order: 2 },
+                        { label: '回収率 (%)', data: rates, borderColor: '#ffc107', backgroundColor: 'transparent', type: 'line', yAxisID: 'y1', tension: 0.3, order: 1 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, title: { display: true, text: '金額 (円)' } },
+                        y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '回収率 (%)' } }
+                    }
+                }
             });
         }
 
@@ -318,15 +564,15 @@
         };
 
         function closeModal() {
-            modal.style.display = 'none';
+            if (modal) modal.style.display = 'none';
         }
-        window.closeModal = closeModal; // ボタン onclick 用に残す（任意だが安全）
+        window.closeModal = closeModal;
 
         function openAddModal() {
             document.getElementById('modal-title').textContent = '実績を登録';
             form.reset();
             clearBuyCode();
-            editingId = ''; // 追記: IDをクリア
+            editingId = '';
             document.getElementById('edit-id').value = '';
             document.getElementById('form-date').value = new Date().toISOString().split('T')[0];
             modal.style.display = 'block';
@@ -335,20 +581,18 @@
         window.editItem = (id) => {
             const item = manager.getAllResults().find(r => r.id === id);
             if (!item) return;
-
             document.getElementById('modal-title').textContent = '実績を編集';
-            editingId = item.id; // 追記: IDをセット
+            editingId = item.id;
             document.getElementById('edit-id').value = item.id;
             document.getElementById('form-date').value = item.date;
             document.getElementById('form-type').value = item.type;
             document.getElementById('form-place').value = item.place;
             document.getElementById('form-raceNumber').value = item.raceNumber;
-
             selectedBoats = item.buyCode ? item.buyCode.split('-') : [];
             document.getElementById('form-buyCode').value = item.buyCode || '';
-
             document.getElementById('form-invest').value = item.invest;
             document.getElementById('form-returnVal').value = item.returnVal;
+            document.getElementById('form-userCount').value = item.userCount || 0;
             document.getElementById('form-memo').value = item.memo || '';
             updateRateInForm();
             modal.style.display = 'block';
@@ -363,56 +607,37 @@
         };
 
         let isSaving = false;
-
         async function handleFormSubmit(e) {
             e.preventDefault();
             if (isSaving) return;
-
             const submitBtn = form.querySelector('button[type="submit"]');
             isSaving = true;
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.textContent = '保存中...';
-            }
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '保存中...'; }
 
             try {
                 const date = document.getElementById('form-date').value;
                 const type = document.getElementById('form-type').value;
                 const place = document.getElementById('form-place').value.trim();
                 const raceNumber = Number(document.getElementById('form-raceNumber').value);
-                const rawBuy = document.getElementById('form-buyCode').value;
-                const buyCode = normalizeBuyCode_(rawBuy);
-
-                if (!buyCode) {
-                    alert('的中買い目（例：1-2-3）を入力してください');
-                    return;
-                }
-
+                const buyCode = normalizeBuyCode_(document.getElementById('form-buyCode').value);
                 const invest = Number(document.getElementById('form-invest').value);
                 const returnVal = Number(document.getElementById('form-returnVal').value);
+                const userCount = Number(document.getElementById('form-userCount').value);
                 const memo = document.getElementById('form-memo').value.trim();
 
-                const payload = { date, type, place, raceNumber, buyCode, invest, returnVal, memo };
-
-                if (editingId) {
-                    await manager.updateResultRemote(editingId, payload);
-                } else {
-                    await manager.createResult(payload);
-                }
+                const payload = { date, type, place, raceNumber, buyCode, invest, returnVal, userCount, memo };
+                if (editingId) await manager.updateResultRemote(editingId, payload);
+                else await manager.createResult(payload);
 
                 initMonthFilter();
                 render();
-
-                closeModal(); // ← 必ず閉じる
+                closeModal();
             } catch (err) {
                 console.error(err);
-                alert('保存に失敗しました（トークン・ネットワーク・設定を確認）');
+                alert('保存に失敗しました');
             } finally {
                 isSaving = false;
-                if (submitBtn) {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = '保存する';
-                }
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '保存する'; }
             }
         }
 
@@ -424,16 +649,10 @@
 
         function normalizeBuyCode_(v) {
             const s = String(v ?? '').trim();
-
-            // すでに "1-2-3" 形式ならOK（スペース除去のみ）
             const cleaned = s.replace(/\s+/g, '');
             if (/^\d{1,2}-\d{1,2}-\d{1,2}$/.test(cleaned)) return cleaned;
-
-            // "1,2,3" や "1 2 3" のような区切りも許容して "1-2-3" に統一
             const nums = cleaned.split(/[^0-9]+/).filter(Boolean);
             if (nums.length === 3) return `${Number(nums[0])}-${Number(nums[1])}-${Number(nums[2])}`;
-
-            // もし Date 文字列になってしまっても、買い目としては不正なので空にする
             return '';
         }
     </script>
