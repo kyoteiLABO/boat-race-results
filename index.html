@@ -28,26 +28,37 @@
                 ※回収率 ＝ 回収金額 ÷ 投資金額 × 100
             </p>
 
-            <div class="stats-summary" style="margin-bottom: 16px;">
+            <div class="stats-summary-2">
                 <div class="stat-item">
-                    <div class="stat-label">件数（直近14日）</div>
-                    <div class="stat-value" id="sum-count">0</div>
+                    <div class="stat-label">平均回収率</div>
+                    <div class="stat-value" id="avg-recovery">--%</div>
                 </div>
+
                 <div class="stat-item">
-                    <div class="stat-label">合計投資（直近14日）</div>
-                    <div class="stat-value" id="sum-invest">¥0</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">合計回収（直近14日）</div>
-                    <div class="stat-value" id="sum-return">¥0</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">回収率（直近14日）</div>
-                    <div class="stat-value" id="sum-rate">0%</div>
+                    <div class="stat-label">的中率</div>
+                    <div class="stat-value" id="hit-rate">--%</div>
                 </div>
             </div>
 
             <p id="last-updated" style="margin: 6px 0 16px; color: var(--color-text-muted); font-size: 0.9rem;"></p>
+
+            <div class="card" style="margin-top: 12px; margin-bottom: 20px;">
+                <h3 style="margin-top: 0;">有料予想 利用者数</h3>
+                <p style="color: #666; font-size: 0.9rem; margin-bottom: 12px;">
+                    ※直近14日（前日までの確定データ）
+                </p>
+
+                <div class="stats-summary" style="margin-bottom: 0;">
+                    <div class="stat-item">
+                        <div class="stat-label">合計（直近14日）</div>
+                        <div class="stat-value" id="sum-users-14">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">1日平均</div>
+                        <div class="stat-value" id="avg-users-14">0</div>
+                    </div>
+                </div>
+            </div>
 
             <div class="result-table-container">
                 <table class="result-table" id="public-results-table">
@@ -86,7 +97,44 @@
             const manager = new BoatRaceManager();
             await manager.init();
 
-            const results = manager.getRecentResults(14);
+            // ===== records：直近14日（当日含む） =====
+            const now = new Date();
+            const endRecords = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // 当日
+            const startRecords = new Date(endRecords.getFullYear(), endRecords.getMonth(), endRecords.getDate() - 13);
+
+            const inRangeRecords = (ymd) => {
+                const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (!m) return false;
+                const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+                return d >= startRecords && d <= endRecords;
+            };
+
+            const results = manager.getAllResults().filter(r => inRangeRecords(r.date));
+
+            // ===== users：前日までの直近14日 =====
+            const endUsers = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1); // 前日
+            const startUsers = new Date(endUsers.getFullYear(), endUsers.getMonth(), endUsers.getDate() - 13);
+
+            const inRangeUsers = (ymd) => {
+                const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (!m) return false;
+                const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+                return d >= startUsers && d <= endUsers;
+            };
+
+            try {
+                const u = await jsonpGet(`${API_BASE_URL}?kind=users`);
+                const items = (u && u.ok && Array.isArray(u.items)) ? u.items : [];
+
+                const filteredUsers = items.filter(x => inRangeUsers(x.date));
+                const totalUsers = filteredUsers.reduce((sum, x) => sum + Number(x.count || 0), 0);
+                const avgUsers = Math.round(totalUsers / 14);
+
+                document.getElementById('sum-users-14').textContent = String(totalUsers);
+                document.getElementById('avg-users-14').textContent = String(avgUsers);
+            } catch (e) {
+                console.error("users 読み込み失敗", e);
+            }
             const tbody = document.getElementById('results-body');
             const noDataMsg = document.getElementById('no-data-message');
 
@@ -117,14 +165,20 @@
             // ===== サマリー（直近14日） =====
             const totalInvest = results.reduce((sum, r) => sum + Number(r.invest || 0), 0);
             const totalReturn = results.reduce((sum, r) => sum + Number(r.returnVal || 0), 0);
-            const totalRate = manager.calculateRecoveryRate(totalInvest, totalReturn);
 
-            document.getElementById('sum-count').textContent = String(results.length);
-            document.getElementById('sum-invest').textContent = `¥${totalInvest.toLocaleString()}`;
-            document.getElementById('sum-return').textContent = `¥${totalReturn.toLocaleString()}`;
-            document.getElementById('sum-rate').textContent = `${totalRate}%`;
-            document.getElementById('sum-rate').style.color =
-                totalRate >= 100 ? 'var(--color-success)' : 'var(--color-danger)';
+            // 平均回収率（従来どおり：合計回収 ÷ 合計投資 × 100）
+            const avgRecovery = manager.calculateRecoveryRate(totalInvest, totalReturn);
+
+            // 的中率（予想数に対して returnVal > 0 の件数）
+            const hitRate = manager.calculateHitRate(results);
+
+            // 2Boxへ反映
+            document.getElementById('avg-recovery').textContent = `${avgRecovery}%`;
+            document.getElementById('hit-rate').textContent = `${hitRate}%`;
+
+            // 色付け（回収率だけ従来のルールを継続）
+            document.getElementById('avg-recovery').style.color =
+                avgRecovery >= 100 ? 'var(--color-success)' : 'var(--color-danger)';
 
             const formatCurrency = (num) => {
                 return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(num);
