@@ -52,10 +52,9 @@ class BoatRaceManager {
         this.writeToken = token;
     }
 
-    async postAction(action, data) {
+    async postAction(action, data, kind = "records") {
         if (!this.writeToken) throw new Error("write token is missing");
 
-        // CORS回避：no-cors + text/plain（preflightを起こしにくい）
         await fetch(API_BASE_URL, {
             method: "POST",
             mode: "no-cors",
@@ -63,12 +62,12 @@ class BoatRaceManager {
             body: JSON.stringify({
                 token: this.writeToken,
                 action,
+                kind,   // ←追加
                 data
             })
         });
 
-        // 送信後に再取得して反映確認（JSONP GET）
-        await this.init();
+        await this.init(); // records側の再読込（usersはdashboard側で別GETする）
         return { ok: true };
     }
 
@@ -83,6 +82,17 @@ class BoatRaceManager {
 
     async deleteResultRemote(id) {
         return await this.postAction("delete", { id });
+    }
+
+    /**
+     * 利用者数データを保存する (kind=users)
+     */
+    async createUserCount(data) {
+        return await this.postAction("create", data, "users");
+    }
+
+    async deleteUserCount(date) {
+        return await this.postAction("delete", { date }, "users");
     }
 
     /**
@@ -163,14 +173,32 @@ class BoatRaceManager {
         const now = new Date();
         const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
 
-        // item.date は "YYYY-MM-DD" 前提
-        return (this.results || []).filter(item => {
-            if (!item.date) return false;
-            const m = String(item.date).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-            if (!m) return false;
-            const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-            return d >= from && d <= now;
-        }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+        const parseDate = (v) => {
+            const s = String(v || '').trim();
+            if (!s) return null;
+
+            // 1) YYYY-MM-DD / YYYY-M-D
+            let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+            if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+
+            // 2) YYYY/MM/DD / YYYY/M/D
+            m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+            if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+
+            // 3) 最後の手段（管理画面と同じく Date() に任せる）
+            const d = new Date(s);
+            if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+            return null;
+        };
+
+        return (this.results || [])
+            .filter(item => {
+                const d = parseDate(item.date);
+                if (!d) return false;
+                return d >= from && d <= now;
+            })
+            .sort((a, b) => String(b.date).localeCompare(String(a.date)));
     }
 
     /**
@@ -190,6 +218,13 @@ class BoatRaceManager {
         return Math.round((returnVal / invest) * 100);
     }
 
+    calculateHitRate(results) {
+        const total = (results || []).length;
+        if (total === 0) return 0;
+        const hits = results.filter(r => Number(r.returnVal || 0) > 0).length;
+        return Math.round((hits / total) * 100);
+    }
+
     /**
      * Get aggregated daily statistics
      * @param {Array} results 
@@ -198,10 +233,11 @@ class BoatRaceManager {
         const stats = {};
         results.forEach(r => {
             if (!stats[r.date]) {
-                stats[r.date] = { date: r.date, invest: 0, returnVal: 0 };
+                stats[r.date] = { date: r.date, invest: 0, returnVal: 0, userCount: 0 };
             }
-            stats[r.date].invest += Number(r.invest);
-            stats[r.date].returnVal += Number(r.returnVal);
+            stats[r.date].invest += Number(r.invest || 0);
+            stats[r.date].returnVal += Number(r.returnVal || 0);
+            stats[r.date].userCount += Number(r.userCount || r.users || 0);
         });
         // Sort by date ascending for charts
         return Object.values(stats).sort((a, b) => new Date(a.date) - new Date(b.date));
