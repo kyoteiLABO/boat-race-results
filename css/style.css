@@ -414,13 +414,14 @@ body {
 
 .admin-users-card .result-table th:nth-child(2),
 .admin-users-card .result-table td:nth-child(2) {
-  width: 90px;
+  width: 80px;
   /* 利用者数 */
+  text-align: center;
 }
 
 .admin-users-card .result-table th:nth-child(3),
 .admin-users-card .result-table td:nth-child(3) {
-  width: 140px;
+  width: 120px;
   /* 編集/削除 */
   white-space: nowrap;
 }
@@ -448,4 +449,43 @@ body {
 .btn-secondary:focus {
   background-color: #6c757d !important;
   color: #fff !important;
+}
+
+/* 利用者数カード全体の横スクロール禁止 */
+.admin-users-card {
+  overflow-x: hidden;
+}
+
+/* 利用者数テーブルの横スクロール禁止 */
+.admin-users-card .result-table-container {
+  overflow-x: hidden !important;
+}
+
+@media (max-width: 600px) {
+
+  .admin-users-card .result-table th,
+  .admin-users-card .result-table td {
+    padding: 4px 6px;
+    font-size: 0.75rem;
+  }
+
+  .admin-users-card .result-table th:nth-child(1),
+  .admin-users-card .result-table td:nth-child(1) {
+    width: 95px;
+  }
+
+  .admin-users-card .result-table th:nth-child(2),
+  .admin-users-card .result-table td:nth-child(2) {
+    width: 65px;
+  }
+
+  .admin-users-card .result-table th:nth-child(3),
+  .admin-users-card .result-table td:nth-child(3) {
+    width: 100px;
+  }
+
+  .admin-users-card .btn-sm {
+    padding: 2px 5px;
+    font-size: 0.7rem;
+  }
 }
